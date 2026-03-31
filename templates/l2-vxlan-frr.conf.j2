@@ -1,0 +1,41 @@
+frr defaults traditional
+hostname pe{{ node_id + 1 }}-l2vxlan
+log file /var/log/frr/frr.log
+!
+router bgp 65501
+ bgp router-id {{ l2_rid }}
+ no bgp default ipv4-unicast
+ bgp default ipv6-unicast
+{% if evpn_rr %}
+ bgp cluster-id 2.2.2.2
+{% endif %}
+ no bgp network import-check
+ bgp allow-martian-nexthop
+ neighbor EVPN-PEERS peer-group
+ neighbor EVPN-PEERS remote-as 65501
+ neighbor EVPN-PEERS update-source {{ vtep }}
+{% for peer in evpn_peers %}
+ neighbor {{ peer }} peer-group EVPN-PEERS
+{% endfor %}
+ !
+ address-family ipv4 unicast
+  redistribute connected
+  redistribute static
+  redistribute kernel
+  neighbor EVPN-PEERS activate
+{% if evpn_rr %}
+  neighbor EVPN-PEERS route-reflector-client
+{% endif %}
+ exit-address-family
+ !
+ address-family l2vpn evpn
+  neighbor EVPN-PEERS activate
+{% if evpn_rr %}
+  neighbor EVPN-PEERS route-reflector-client
+{% endif %}
+  advertise-all-vni
+  advertise-svi-ip
+ exit-address-family
+exit
+!
+end

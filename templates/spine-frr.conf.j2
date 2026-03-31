@@ -1,0 +1,71 @@
+frr defaults traditional
+hostname spine
+log file /var/log/frr/frr.log
+!
+interface lo
+ ip address {{ bgp_rid }}/32
+ ipv6 address {{ lo_ipv6 }}
+ ip router isis UNDERLAY
+ ipv6 router isis UNDERLAY
+ isis passive
+!
+{% for iface in fabric_interfaces %}
+interface {{ iface.name }}
+ description {{ iface.description }}
+ ip router isis UNDERLAY
+ ipv6 router isis UNDERLAY
+ isis network point-to-point
+!
+{% endfor %}
+router isis UNDERLAY
+ is-type level-1
+ net {{ isis_net }}
+ topology ipv6-unicast
+ log-adjacency-changes
+ segment-routing on
+ segment-routing srv6
+  locator MAIN
+ exit
+exit
+!
+router bgp 65500
+ bgp router-id {{ bgp_rid }}
+ no bgp default ipv4-unicast
+ bgp default ipv6-unicast
+ no bgp network import-check
+ bgp allow-martian-nexthop
+ !
+ neighbor PE peer-group
+ neighbor PE remote-as 65500
+ neighbor PE capability dynamic
+ neighbor PE capability extended-nexthop
+ neighbor PE update-source lo
+{% for lo in pe_loopbacks %}
+ neighbor {{ lo }} peer-group PE
+{% endfor %}
+ !
+ address-family ipv4 vpn
+  neighbor PE activate
+  neighbor PE route-reflector-client
+ exit-address-family
+ !
+ address-family ipv6 vpn
+  neighbor PE activate
+  neighbor PE route-reflector-client
+ exit-address-family
+exit
+!
+segment-routing
+ srv6
+  encapsulation
+   source-address {{ srv6_src }}
+  locators
+   locator MAIN
+    prefix {{ srv6_loc }} block-len 32 node-len 16
+    behavior usid
+   exit
+  exit
+ exit
+exit
+!
+end

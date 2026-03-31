@@ -1,0 +1,85 @@
+---
+all:
+  vars:
+    ansible_user: clab
+    ansible_password: "clab@123"
+    ansible_become_password: "clab@123"
+    ansible_become: true
+    frr_image: "quay.io/frrouting/frr:10.5.2"
+    lab_name: srv6-lab
+  children:
+    pe_group:
+      hosts:
+        pe1:
+          ansible_host: clab-srv6-lab-pe1
+          node_id: 0
+          fabric_if: eth1
+          isis_lo: "fc00:0:0:1::16/128"
+          isis_net: "49.0000.1000.f006.0016.00"
+          bgp_rid: "172.31.250.106"
+          srv6_src: "fd00:30:16::"
+          srv6_loc: "fd00:30:16::/48"
+          cmn_lo_v4: "10.55.98.6/32"
+          ve_ovn_def: "10.55.96.22/30"
+          ve_ovn_pe: "10.55.96.21/30"
+          ve_host_def: "10.55.97.22/30"
+          ve_host_pe: "10.55.97.21/30"
+          ve_l2: "10.55.96.150/30"
+          ve_l2_pe: "10.55.96.149/30"
+          vtep: "10.55.96.150"
+          l2_gw: "10.55.96.149"
+          machine_v4: "10.55.99.7/26"
+          l2_rid: "1.1.1.6"
+          cmn_nh: "10.55.96.150"
+          evpn_rr: true
+          evpn_peers:
+            - "10.55.96.154"
+            - "10.55.96.158"
+        pe2:
+          ansible_host: clab-srv6-lab-pe2
+          node_id: 1
+          fabric_if: eth1
+          isis_lo: "fc00:0:0:1::17/128"
+          isis_net: "49.0000.1000.f006.0017.00"
+          bgp_rid: "172.31.250.107"
+          srv6_src: "fd00:30:17::"
+          srv6_loc: "fd00:30:17::/48"
+          cmn_lo_v4: "10.55.98.7/32"
+          ve_ovn_def: "10.55.96.25/30"
+          ve_ovn_pe: "10.55.96.26/30"
+          ve_host_def: "10.55.97.25/30"
+          ve_host_pe: "10.55.97.26/30"
+          ve_l2: "10.55.96.154/30"
+          ve_l2_pe: "10.55.96.153/30"
+          vtep: "10.55.96.154"
+          l2_gw: "10.55.96.153"
+          machine_v4: "10.55.99.8/26"
+          l2_rid: "1.1.1.7"
+          cmn_nh: "10.55.96.154"
+          evpn_rr: false
+          evpn_peers:
+            - "10.55.96.150"
+        pe3:
+          ansible_host: clab-srv6-lab-pe3
+          node_id: 2
+          fabric_if: eth1
+          isis_lo: "fc00:0:0:1::18/128"
+          isis_net: "49.0000.1000.f006.0018.00"
+          bgp_rid: "172.31.250.108"
+          srv6_src: "fd00:30:18::"
+          srv6_loc: "fd00:30:18::/48"
+          cmn_lo_v4: "10.55.98.8/32"
+          ve_ovn_def: "10.55.96.29/30"
+          ve_ovn_pe: "10.55.96.30/30"
+          ve_host_def: "10.55.97.29/30"
+          ve_host_pe: "10.55.97.30/30"
+          ve_l2: "10.55.96.158/30"
+          ve_l2_pe: "10.55.96.157/30"
+          vtep: "10.55.96.158"
+          l2_gw: "10.55.96.157"
+          machine_v4: "10.55.99.9/26"
+          l2_rid: "1.1.1.8"
+          cmn_nh: "10.55.96.158"
+          evpn_rr: false
+          evpn_peers:
+            - "10.55.96.150"

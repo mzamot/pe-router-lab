@@ -1,0 +1,197 @@
+---
+- name: Deploy containerlab topology
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: false
+  tags: [clab]
+  vars:
+    lab_name: srv6-lab
+  tasks:
+    - name: Detect container runtime
+      ansible.builtin.shell: |
+        if command -v podman &>/dev/null && ! docker version 2>/dev/null | grep -q "Docker Engine"; then
+          echo "podman"
+        else
+          echo "docker"
+        fi
+      register: runtime_check
+      changed_when: false
+
+    - name: Set runtime flag
+      ansible.builtin.set_fact:
+        clab_runtime: "{{ '--runtime podman' if runtime_check.stdout | trim == 'podman' else '' }}"
+
+    - name: Deploy topology
+      ansible.builtin.shell: >
+        containerlab deploy
+        -t {{ playbook_dir }}/topology.clab.yml
+        --reconfigure {{ clab_runtime }}
+      args:
+        chdir: "{{ playbook_dir }}"
+
+- name: PE prerequisites
+  hosts: pe_group
+  become: true
+  gather_facts: false
+  tags: [configure]
+  tasks:
+    - name: Wait for VMs to boot and SSH to be ready
+      ansible.builtin.wait_for_connection:
+        timeout: 400
+        sleep: 10
+
+    - name: Install required packages
+      ansible.builtin.dnf:
+        name:
+          - podman
+          - iproute
+          - ethtool
+        state: present
+
+    - name: Load kernel modules
+      ansible.builtin.shell: "modprobe {{ item }} 2>/dev/null || true"
+      loop:
+        - dummy
+        - vrf
+        - veth
+        - vxlan
+        - bridge
+        - br_netfilter
+        - 8021q
+      changed_when: false
+
+    - name: Pull FRR container image
+      ansible.builtin.shell: "podman pull {{ frr_image }}"
+      register: pull_result
+      changed_when: "'Storing' in pull_result.stdout or 'Copying' in pull_result.stderr"
+
+- name: Configure PEs
+  hosts: pe_group
+  become: true
+  gather_facts: false
+  tags: [configure]
+  tasks:
+    - name: Create FRR config directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /etc/frr/pe-router
+        - /etc/frr/l2-vxlan
+
+    - name: Write FRR configs and daemons
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        mode: "0644"
+      loop:
+        - { src: pe-router-frr.conf.j2,  dest: /etc/frr/pe-router/frr.conf }
+        - { src: pe-router-daemons.j2,    dest: /etc/frr/pe-router/daemons }
+        - { src: l2-vxlan-frr.conf.j2,    dest: /etc/frr/l2-vxlan/frr.conf }
+        - { src: l2-vxlan-daemons.j2,     dest: /etc/frr/l2-vxlan/daemons }
+
+    - name: Write vtysh.conf files
+      ansible.builtin.copy:
+        dest: "{{ item }}"
+        mode: "0644"
+        content: "service integrated-vtysh-config\n"
+      loop:
+        - /etc/frr/pe-router/vtysh.conf
+        - /etc/frr/l2-vxlan/vtysh.conf
+
+    - name: Push PE networking setup script
+      ansible.builtin.template:
+        src: setup-pe-networking.sh.j2
+        dest: /tmp/setup-pe-networking.sh
+        mode: "0755"
+
+    - name: Run PE networking setup
+      ansible.builtin.shell: bash /tmp/setup-pe-networking.sh
+      register: pe_setup
+
+    - name: Show PE setup output
+      ansible.builtin.debug:
+        var: pe_setup.stdout_lines
+
+- name: Verify underlay convergence
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: false
+  tags: [verify]
+  vars:
+    lab_name: srv6-lab
+  tasks:
+    - name: Wait for IS-IS and BGP to converge
+      ansible.builtin.pause:
+        seconds: 45
+        prompt: "Waiting 45s for IS-IS adjacencies and BGP sessions..."
+
+    - name: Check IS-IS neighbors on spine
+      ansible.builtin.shell: >
+        podman exec clab-{{ lab_name }}-spine vtysh -c 'show isis neighbor'
+      register: isis_result
+      changed_when: false
+
+    - name: IS-IS neighbor status
+      ansible.builtin.debug:
+        var: isis_result.stdout_lines
+
+    - name: Check BGP VPN summary on spine
+      ansible.builtin.shell: >
+        podman exec clab-{{ lab_name }}-spine vtysh -c 'show bgp ipv4 vpn summary'
+      register: bgp_result
+      changed_when: false
+
+    - name: BGP VPN summary
+      ansible.builtin.debug:
+        var: bgp_result.stdout_lines
+
+- name: Test end-to-end connectivity
+  hosts: pe1
+  become: true
+  gather_facts: false
+  tags: [verify]
+  tasks:
+    - name: Wait for EVPN to converge
+      ansible.builtin.pause:
+        seconds: 30
+        prompt: "Waiting 30s for EVPN..."
+
+    - name: Ping PE2 machine network (10.55.99.8)
+      ansible.builtin.shell: "ping -c 3 -W 2 10.55.99.8"
+      register: ping_pe2
+      ignore_errors: true
+      changed_when: false
+
+    - name: Ping PE3 machine network (10.55.99.9)
+      ansible.builtin.shell: "ping -c 3 -W 2 10.55.99.9"
+      register: ping_pe3
+      ignore_errors: true
+      changed_when: false
+
+    - name: Connectivity results
+      ansible.builtin.debug:
+        msg:
+          - "PE2 (10.55.99.8): {{ 'OK' if ping_pe2.rc == 0 else 'FAILED — check IS-IS, BGP L3VPN, EVPN' }}"
+          - "PE3 (10.55.99.9): {{ 'OK' if ping_pe3.rc == 0 else 'FAILED — check IS-IS, BGP L3VPN, EVPN' }}"
+
+    - name: Verification commands
+      ansible.builtin.debug:
+        msg:
+          - "=== Manual verification ==="
+          - "Spine (on lab host):"
+          - "  sudo podman exec clab-srv6-lab-spine vtysh"
+          - "    show isis neighbor"
+          - "    show bgp ipv4 vpn summary"
+          - ""
+          - "PE (ssh clab@clab-srv6-lab-pe1, password: clab@123):"
+          - "  sudo podman exec frr-pe-router vtysh"
+          - "    show isis neighbor"
+          - "    show bgp ipv4 vpn"
+          - "    show ip route vrf CMN"
+          - "  sudo podman exec frr-l2-vxlan vtysh"
+          - "    show bgp l2vpn evpn summary"
+          - "    show evpn vni"

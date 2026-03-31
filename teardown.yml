@@ -1,0 +1,31 @@
+---
+- name: Destroy containerlab topology
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: false
+  vars:
+    lab_name: srv6-lab
+  tasks:
+    - name: Detect container runtime
+      ansible.builtin.shell: |
+        if command -v podman &>/dev/null && ! docker version 2>/dev/null | grep -q "Docker Engine"; then
+          echo "podman"
+        else
+          echo "docker"
+        fi
+      register: runtime_check
+      changed_when: false
+
+    - name: Set runtime flag
+      ansible.builtin.set_fact:
+        clab_runtime: "{{ '--runtime podman' if runtime_check.stdout | trim == 'podman' else '' }}"
+
+    - name: Destroy topology
+      ansible.builtin.shell: >
+        containerlab destroy
+        -t {{ playbook_dir }}/topology.clab.yml
+        --cleanup
+        {{ clab_runtime }}
+      args:
+        chdir: "{{ playbook_dir }}"

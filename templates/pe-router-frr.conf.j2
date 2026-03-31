@@ -1,0 +1,110 @@
+frr defaults traditional
+hostname pe{{ node_id + 1 }}-router
+log file /var/log/frr/frr.log
+!
+vrf CMN
+ ip route 10.55.99.0/26 {{ cmn_nh }}
+exit-vrf
+!
+vrf EDN
+exit-vrf
+!
+interface {{ fabric_if }}
+ ip router isis SRV6-LAB
+ ipv6 router isis SRV6-LAB
+ isis network point-to-point
+exit
+!
+interface lo
+ ip router isis SRV6-LAB
+ ipv6 address {{ isis_lo }}
+ ipv6 router isis SRV6-LAB
+ isis passive
+exit
+!
+router bgp 65500
+ bgp router-id {{ bgp_rid }}
+ no bgp default ipv4-unicast
+ bgp default ipv6-unicast
+ no bgp network import-check
+ bgp allow-martian-nexthop
+ neighbor SPINE peer-group
+ neighbor SPINE remote-as 65500
+ neighbor SPINE capability dynamic
+ neighbor SPINE capability extended-nexthop
+ neighbor fc00:0:0:1::1 peer-group SPINE
+ !
+ segment-routing srv6
+  locator MAIN
+ exit
+ sid vpn per-vrf export auto
+ !
+ address-family ipv4 unicast
+  redistribute static
+  neighbor SPINE next-hop-self
+ exit-address-family
+ !
+ address-family ipv4 vpn
+  neighbor SPINE activate
+  neighbor SPINE next-hop-self
+ exit-address-family
+ !
+ address-family ipv6 vpn
+  neighbor SPINE activate
+ exit-address-family
+exit
+!
+router bgp 65500 vrf EDN
+ sid vpn per-vrf export auto
+ !
+ address-family ipv4 unicast
+  redistribute connected
+  redistribute static
+  rd vpn export {{ bgp_rid }}:2
+  rt vpn import 65004:2
+  rt vpn export 65004:2
+  export vpn
+  import vpn
+ exit-address-family
+exit
+!
+router bgp 65500 vrf CMN
+ sid vpn per-vrf export auto
+ !
+ address-family ipv4 unicast
+  redistribute kernel
+  redistribute connected
+  redistribute static
+  rd vpn export {{ bgp_rid }}:4
+  rt vpn import 65004:4
+  rt vpn export 65004:4
+  export vpn
+  import vpn
+ exit-address-family
+exit
+!
+router isis SRV6-LAB
+ is-type level-1
+ net {{ isis_net }}
+ topology ipv6-unicast
+ log-adjacency-changes
+ segment-routing on
+ segment-routing srv6
+  locator MAIN
+ exit
+exit
+!
+segment-routing
+ srv6
+  encapsulation
+   source-address {{ srv6_src }}
+  locators
+   locator MAIN
+    prefix {{ srv6_loc }} block-len 32 node-len 16
+    behavior usid
+   exit
+  exit
+ exit
+exit
+!
+end

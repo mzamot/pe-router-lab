@@ -1,0 +1,38 @@
+name: srv6-lab
+
+topology:
+  nodes:
+    spine:
+      kind: linux
+      image: quay.io/frrouting/frr:10.5.2
+      binds:
+        - configs/spine/frr.conf:/etc/frr/frr.conf
+        - configs/spine/daemons:/etc/frr/daemons
+      exec:
+        - ip link set eth1 mtu 9000
+        - ip link set eth2 mtu 9000
+        - ip link set eth3 mtu 9000
+        - sysctl -w net.ipv6.conf.all.forwarding=1
+        - sysctl -w net.ipv4.conf.all.forwarding=1
+        - sysctl -w net.ipv6.conf.all.seg6_enabled=1
+        - sysctl -w net.ipv6.conf.eth1.seg6_enabled=1
+        - sysctl -w net.ipv6.conf.eth2.seg6_enabled=1
+        - sysctl -w net.ipv6.conf.eth3.seg6_enabled=1
+        - sysctl -w net.ipv4.conf.all.rp_filter=0
+
+    pe1:
+      kind: generic_vm
+      image: localhost/vrnetlab/almalinux_almalinux:10
+
+    pe2:
+      kind: generic_vm
+      image: localhost/vrnetlab/almalinux_almalinux:10
+
+    pe3:
+      kind: generic_vm
+      image: localhost/vrnetlab/almalinux_almalinux:10
+
+  links:
+    - endpoints: ["spine:eth1", "pe1:eth1"]
+    - endpoints: ["spine:eth2", "pe2:eth1"]
+    - endpoints: ["spine:eth3", "pe3:eth1"]
