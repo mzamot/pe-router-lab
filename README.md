@@ -25,9 +25,27 @@ Networking lab to explore SRv6 + BGP L3VPN + BGP EVPN/VXLAN architecture using c
 ## Prerequisites
 
 - containerlab >= 0.55.0
-- vrnetlab AlmaLinux image (`localhost/vrnetlab/rhel_almalinux:10`)
+- vrnetlab AlmaLinux image (`localhost/vrnetlab/almalinux_almalinux:10`) — built from [github.com/mzamot/vrnetlab](https://github.com/mzamot/vrnetlab) (branch `almalinux`)
 - ansible-core
 - sshpass
+
+## Building the vrnetlab AlmaLinux image
+
+AlmaLinux is not supported by upstream vrnetlab. Use the fork below to build
+the VM image that containerlab needs for the PE nodes:
+
+```bash
+git clone -b almalinux https://github.com/mzamot/vrnetlab.git
+cd vrnetlab/almalinux
+make
+```
+
+This downloads the AlmaLinux qcow2 automatically and produces
+`localhost/vrnetlab/almalinux_almalinux:10`. Verify with:
+
+```bash
+podman images | grep almalinux_almalinux
+```
 
 ## Usage
 
@@ -96,35 +114,21 @@ sudo podman exec clab-srv6-lab-spine vtysh
   show bgp ipv4 vpn summary
 ```
 
-## Bare-metal deployment
-
-A separate inventory and playbook exist for deploying to physical or VM hosts where the spine is also managed by Ansible:
-
-```bash
-ansible-playbook -i baremetal/inventory.yml baremetal/deploy.yml
-ansible-playbook -i baremetal/inventory.yml baremetal/teardown.yml
-```
-
-Both paths share the same Jinja templates in `templates/`.
-
 ## File structure
 
 ```
-├── deploy.yml               Ansible playbook (containerlab)
+├── deploy.yml               Ansible playbook
 ├── teardown.yml              Destroy the lab
 ├── inventory.yml             Per-node addressing and credentials
 ├── ansible.cfg               SSH settings for containerlab VMs
 ├── topology.clab.yml         Containerlab topology definition
-├── templates/                Shared Jinja templates
+├── templates/                Jinja templates
 │   ├── pe-router-frr.conf.j2
 │   ├── pe-router-daemons.j2
 │   ├── l2-vxlan-frr.conf.j2
 │   ├── l2-vxlan-daemons.j2
-│   ├── spine-frr.conf.j2        (baremetal only)
-│   ├── spine-daemons.j2         (baremetal only)
 │   └── setup-pe-networking.sh.j2
 ├── configs/spine/            Static spine config (bind-mounted by containerlab)
-├── baremetal/                Bare-metal inventory and playbooks
 └── learning/                 Educational deep-dives
 ```
 
