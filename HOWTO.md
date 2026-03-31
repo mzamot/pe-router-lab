@@ -8,9 +8,11 @@ and L2 VXLAN overlay.
 Every command is typed manually. No automation scripts. You will configure each
 protocol one at a time, verify it works, then move to the next layer.
 
-**Prerequisites:** You should have read LEARNING.md first. This guide assumes
-you understand what each protocol does and why — here, we focus on the exact
-commands, what every line and flag does, and how the pieces connect.
+**Prerequisites:** You should have read the guides in the [learning/](learning/)
+directory first (start with [01-foundations.md](learning/01-foundations.md)).
+This guide assumes you understand what each protocol does and why — here, we
+focus on the exact commands, what every line and flag does, and how the pieces
+connect.
 
 ---
 
@@ -134,29 +136,49 @@ sudo dnf install sshpass
 sudo pacman -S sshpass
 ```
 
-### Step 3: The vrnetlab AlmaLinux Image
+### Step 3: Build the vrnetlab AlmaLinux Image
 
 This lab uses a vrnetlab AlmaLinux 10 VM image
-(`localhost/vrnetlab/rhel_almalinux:10`). The image should already be built
-and available locally. Verify it exists:
+(`localhost/vrnetlab/almalinux_almalinux:10`). AlmaLinux is not officially
+supported by upstream vrnetlab, so you need to build the image from a fork
+that adds AlmaLinux support.
+
+**3a — Clone the vrnetlab fork with AlmaLinux support**
 
 ```bash
-podman images | grep rhel_almalinux
+git clone -b almalinux https://github.com/mzamot/vrnetlab.git
+cd vrnetlab/almalinux
+```
+
+**3b — Build the container image**
+
+```bash
+make
+```
+
+The build downloads the AlmaLinux qcow2 image automatically, then wraps it
+inside a container image using QEMU/vrnetlab scaffolding. It takes a few
+minutes depending on your machine. When it finishes, the image is tagged as
+`localhost/vrnetlab/almalinux_almalinux:10`.
+
+**3c — Verify the image exists**
+
+```bash
+podman images | grep almalinux_almalinux
 ```
 
 You should see:
 
 ```
-localhost/vrnetlab/rhel_almalinux   10   <hash>   <date>   <size>
+localhost/vrnetlab/almalinux_almalinux   10   <hash>   <date>   <size>
 ```
 
-This `localhost/vrnetlab/rhel_almalinux:10` is exactly what the
-`topology.clab.yml` file references for each PE node:
+This is exactly what `topology.clab.yml` references for each PE node:
 
 ```yaml
 pe1:
   kind: generic_vm
-  image: localhost/vrnetlab/rhel_almalinux:10
+  image: localhost/vrnetlab/almalinux_almalinux:10
 ```
 
 ### Step 4: Deploy the Lab
@@ -164,28 +186,42 @@ pe1:
 With containerlab installed and the VM image built, you can deploy the full
 lab. There are two ways:
 
-**Option A: Automated deployment (recommended)**
+**Option A: Automated deployment with Ansible (recommended)**
 
 ```bash
 cd /path/to/appliance/lab
-sudo bash deploy.sh
+sudo ansible-playbook deploy.yml
 ```
 
-**What `deploy.sh` does:**
-1. Runs `containerlab deploy -t topology.clab.yml` — starts the spine (instant) and
+The playbook runs four plays in sequence:
+1. **Deploy containerlab topology** — starts the spine container (instant) and
    the three PE VMs (each takes ~60-90 seconds to boot)
-2. Waits for SSH to become available on each PE VM
-3. Copies `scripts/setup-pe.sh` into each VM via SCP
-4. Runs the setup script on each PE, which creates the namespaces, veth pairs,
-   VRFs, VXLAN bridge, and starts FRR containers — the full networking stack
+2. **PE prerequisites** — waits for VMs to boot and SSH to become ready,
+   installs packages (`podman`, `iproute`, `ethtool`), loads kernel modules
+3. **Configure PEs** — templates FRR configs, builds namespaces/veths/VXLAN,
+   starts FRR containers
+4. **Verify** — checks IS-IS adjacencies, BGP VPN sessions, and end-to-end
+   EVPN connectivity
 
-After ~3-5 minutes, the script outputs SSH connection info and verification
-commands.
+After ~5 minutes, the playbook outputs verification results and SSH
+connection info.
+
+To re-configure PEs without re-deploying containerlab:
+
+```bash
+sudo ansible-playbook deploy.yml --tags configure
+```
+
+To tear down the lab:
+
+```bash
+sudo ansible-playbook teardown.yml
+```
 
 **Option B: Manual deployment**
 
-If you want to understand each step (or if you're following the HOWTO guide to
-configure everything by hand):
+If you want to understand each step (or if you're following this HOWTO guide
+to configure everything by hand):
 
 ```bash
 cd /path/to/appliance/lab
@@ -216,7 +252,7 @@ state.
 To check that the spine FRR container is healthy:
 
 ```bash
-sudo docker exec clab-srv6-lab-spine vtysh -c "show version"
+sudo podman exec clab-srv6-lab-spine vtysh -c "show version"
 ```
 
 To check that a PE VM is reachable:
@@ -237,9 +273,9 @@ sudo containerlab destroy -t topology.clab.yml --cleanup
 ```
 
 **What this does:** Stops all containers/VMs, removes the virtual links, and
-deletes the lab directory (`clab-srv6-lab/`). The `--cleanup` flag also removes
-any container images that were pulled. Your vrnetlab AlmaLinux image remains
-intact — you don't need to rebuild it next time.
+deletes the lab directory (`clab-srv6-lab/`). The `--cleanup` flag removes
+the lab state files so you get a clean start next time. Your vrnetlab
+AlmaLinux image and any pulled container images remain intact.
 
 ---
 
